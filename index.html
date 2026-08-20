@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<title>가계부</title>
+<meta name="theme-color" content="#1c1c1e" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="가계부" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<style>
+  :root {
+    --bg: #f7f7f8;
+    --card: #ffffff;
+    --text: #1c1c1e;
+    --muted: #888888;
+    --border: #eeeeee;
+    --danger: #ff3b30;
+    --warn: #ff9500;
+    --good: #34c759;
+    --dark: #1c1c1e;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wrap {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 24px 20px 40px;
+    padding-top: calc(24px + env(safe-area-inset-top));
+  }
+  h1 { font-size: 28px; font-weight: 700; margin: 0 0 16px; }
+
+  .card {
+    background: var(--card);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .summary-label { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .summary-amount { font-size: 30px; font-weight: 700; margin-bottom: 12px; }
+  .summary-total { font-size: 16px; font-weight: 400; color: #999; }
+  .progress-track {
+    height: 10px;
+    background: var(--border);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .progress-fill { height: 100%; border-radius: 5px; transition: width .3s ease, background-color .3s ease; }
+  .remaining { font-size: 14px; font-weight: 500; }
+
+  .week-row { display: flex; justify-content: space-between; margin-bottom: 20px; gap: 4px; }
+  .day-box {
+    flex: 1;
+    text-align: center;
+    padding: 10px 2px;
+    border-radius: 10px;
+    background: var(--card);
+  }
+  .day-box.today { background: var(--dark); color: #fff; }
+  .day-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .day-box.today .day-label { color: #fff; }
+  .day-amount { font-size: 13px; font-weight: 600; }
+
+  .input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 20px; }
+  .amount-wrap {
+    display: flex; align-items: center;
+    background: var(--card); border-radius: 10px;
+    padding: 0 10px; height: 44px; width: 100px; flex-shrink: 0;
+  }
+  .amount-wrap span { color: var(--muted); margin-right: 2px; }
+  .amount-wrap input {
+    border: none; outline: none; background: transparent;
+    font-size: 16px; width: 100%; -webkit-appearance: none;
+  }
+  .memo-input {
+    flex: 1; background: var(--card); border: none; border-radius: 10px;
+    padding: 0 12px; height: 44px; font-size: 14px; outline: none;
+  }
+  .add-btn {
+    background: var(--dark); color: #fff; border: none; border-radius: 10px;
+    padding: 0 16px; height: 44px; font-weight: 600; font-size: 15px;
+  }
+  .add-btn:active { opacity: 0.7; }
+
+  h2 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+  .empty { color: #999; font-size: 14px; margin-bottom: 8px; }
+
+  .expense-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card); border-radius: 10px; padding: 14px; margin-bottom: 8px;
+  }
+  .expense-amount { font-size: 16px; font-weight: 600; }
+  .expense-memo { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .delete-btn { color: var(--danger); background: none; border: none; font-size: 13px; padding: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>가계부</h1>
+
+  <div class="card">
+    <div class="summary-label">이번 주 사용액</div>
+    <div class="summary-amount"><span id="weekTotal">£0.00</span> <span class="summary-total">/ £70.00</span></div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="remaining" id="remainingText"></div>
+  </div>
+
+  <div class="week-row" id="weekRow"></div>
+
+  <div class="input-row">
+    <div class="amount-wrap">
+      <span>£</span>
+      <input type="text" inputmode="decimal" id="amountInput" placeholder="0.00" />
+    </div>
+    <input type="text" class="memo-input" id="memoInput" placeholder="메모 (선택)" />
+    <button class="add-btn" id="addBtn">추가</button>
+  </div>
+
+  <h2>오늘 지출 내역</h2>
+  <div id="todayList"></div>
+</div>
+
+<script>
+const STORAGE_KEY = 'budget_expenses_v1';
+const WEEKLY_BUDGET = 70;
+const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+
+function toDateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0,0,0,0);
+  return date;
+}
+function addDays(d, n) {
+  const date = new Date(d);
+  date.setDate(date.getDate() + n);
+  return date;
+}
+
+function loadExpenses() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.warn('불러오기 실패', e);
+    return [];
+  }
+}
+function saveExpenses(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+let expenses = loadExpenses();
+
+function render() {
+  const today = new Date();
+  const todayKey = toDateKey(today);
+  const monday = getMonday(today);
+
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const date = addDays(monday, i);
+    const key = toDateKey(date);
+    const total = expenses.filter(e => e.dateKey === key).reduce((s, e) => s + e.amount, 0);
+    return { key, label: DAY_LABELS[i], total, isToday: key === todayKey };
+  });
+
+  const weekTotal = weekDays.reduce((s, d) => s + d.total, 0);
+  const remaining = WEEKLY_BUDGET - weekTotal;
+  const progress = Math.min(weekTotal / WEEKLY_BUDGET, 1);
+  const barColor = progress < 0.7 ? 'var(--good)' : progress < 1 ? 'var(--warn)' : 'var(--danger)';
+
+  document.getElementById('weekTotal').textContent = `£${weekTotal.toFixed(2)}`;
+  const fill = document.getElementById('progressFill');
+  fill.style.width = `${progress * 100}%`;
+  fill.style.backgroundColor = barColor;
+
+  const remainingEl = document.getElementById('remainingText');
+  remainingEl.textContent = remaining >= 0
+    ? `남은 예산 £${remaining.toFixed(2)}`
+    : `£${Math.abs(remaining).toFixed(2)} 초과`;
+  remainingEl.style.color = remaining < 0 ? 'var(--danger)' : '#666';
+
+  const weekRow = document.getElementById('weekRow');
+  weekRow.innerHTML = '';
+  weekDays.forEach(d => {
+    const box = document.createElement('div');
+    box.className = 'day-box' + (d.isToday ? ' today' : '');
+    box.innerHTML = `<div class="day-label">${d.label}</div><div class="day-amount">${d.total > 0 ? d.total.toFixed(0) : '-'}</div>`;
+    weekRow.appendChild(box);
+  });
+
+  const todayExpenses = expenses
+    .filter(e => e.dateKey === todayKey)
+    .sort((a, b) => b.createdAt - a.createdAt);
+
+  const list = document.getElementById('todayList');
+  list.innerHTML = '';
+  if (todayExpenses.length === 0) {
+    list.innerHTML = '<div class="empty">아직 기록이 없어요.</div>';
+  } else {
+    todayExpenses.forEach(item => {
+      const row = document.createElement('div');
+      row.className = 'expense-row';
+      row.innerHTML = `
+        <div>
+          <div class="expense-amount">£${item.amount.toFixed(2)}</div>
+          ${item.memo ? `<div class="expense-memo">${escapeHtml(item.memo)}</div>` : ''}
+        </div>
+        <button class="delete-btn" data-id="${item.id}">삭제</button>
+      `;
+      list.appendChild(row);
+    });
+    list.querySelectorAll('.delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        expenses = expenses.filter(e => e.id !== btn.dataset.id);
+        saveExpenses(expenses);
+        render();
+      });
+    });
+  }
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+document.getElementById('addBtn').addEventListener('click', () => {
+  const amountInput = document.getElementById('amountInput');
+  const memoInput = document.getElementById('memoInput');
+  const value = parseFloat(amountInput.value.replace(',', '.'));
+  if (isNaN(value) || value <= 0) {
+    alert('0보다 큰 숫자를 입력해주세요.');
+    return;
+  }
+  const today = new Date();
+  expenses.push({
+    id: Date.now().toString(),
+    dateKey: toDateKey(today),
+    amount: value,
+    memo: memoInput.value.trim(),
+    createdAt: Date.now(),
+  });
+  saveExpenses(expenses);
+  amountInput.value = '';
+  memoInput.value = '';
+  render();
+});
+
+render();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('service-worker.js').catch(err => console.warn('SW 등록 실패', err));
+  });
+}
+</script>
+</body>
+</html>
